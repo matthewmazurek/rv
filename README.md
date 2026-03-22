@@ -52,12 +52,15 @@ rv init my_analysis --no-renv
 
 ```bash
 rv add dplyr ggplot2 data.table
+rv add Seurat==4.4.0              # pin to a specific version
 rv add SingleCellExperiment --bioc
 rv rm dplyr
 ```
 
-`add` appends packages to `scripts/setup_env.R`, installs them, and snapshots renv.
+`add` appends packages to `scripts/setup_env.R`, installs them via [`pak`](https://pak.r-lib.org/) (prefers binaries), and snapshots renv.
 `rm` removes packages from the list and snapshots renv.
+
+Version pins use `==` syntax (e.g. `Seurat==4.4.0`). Pinned packages are stored as `"pkg@version"` in `setup_env.R` and installed with `pak::pkg_install("pkg@version")`, which prefers pre-built binaries from Posit Package Manager over compiling from source.
 
 ### `rv sync`
 

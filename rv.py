@@ -21,27 +21,58 @@ PKGS_PATTERN = re.compile(
     r"(required_pkgs\s*<-\s*c\()([^)]*?)(\))", re.DOTALL
 )
 
+Pkg = tuple[str, str | None]  # (name, version_or_None)
 
-def parse_pkg_list(text: str) -> list[str]:
-    """Extract package names from the required_pkgs <- c(...) block."""
+
+def parse_pkg_spec(spec: str) -> Pkg:
+    """Parse a CLI spec like 'Seurat==4.4.0' into (name, version)."""
+    if "==" in spec:
+        name, version = spec.split("==", 1)
+        return name, version
+    return spec, None
+
+
+def parse_pkg_list(text: str) -> list[Pkg]:
+    """Extract (name, version) tuples from the required_pkgs <- c(...) block."""
     m = PKGS_PATTERN.search(text)
     if not m:
         return []
-    inner = m.group(2)
-    return re.findall(r'"([^"]+)"', inner)
+    entries = re.findall(r'"([^"]+)"', m.group(2))
+    result: list[Pkg] = []
+    for e in entries:
+        if "@" in e:
+            name, ver = e.split("@", 1)
+            result.append((name, ver))
+        else:
+            result.append((e, None))
+    return result
 
 
-def format_pkg_list(pkgs: list[str]) -> str:
+def pkg_names(pkgs: list[Pkg]) -> list[str]:
+    """Return just the names from a package list."""
+    return [name for name, _ in pkgs]
+
+
+def format_pkg_entry(name: str, version: str | None) -> str:
+    return f'  "{name}@{version}"' if version else f'  "{name}"'
+
+
+def format_pkg_list(pkgs: list[Pkg]) -> str:
     """Format a package list as R c() body."""
     if not pkgs:
         return "required_pkgs <- c()"
-    entries = ",\n".join(f'  "{p}"' for p in pkgs)
+    entries = ",\n".join(format_pkg_entry(n, v) for n, v in pkgs)
     return f"required_pkgs <- c(\n{entries}\n)"
 
 
-def replace_pkg_list(text: str, pkgs: list[str]) -> str:
+def replace_pkg_list(text: str, pkgs: list[Pkg]) -> str:
     """Replace the required_pkgs <- c(...) block in-place."""
     return PKGS_PATTERN.sub(format_pkg_list(pkgs), text)
+
+
+def pak_spec(name: str, version: str | None) -> str:
+    """Build a pak-compatible install spec."""
+    return f"{name}@{version}" if version else name
 
 
 def require_project():
@@ -160,14 +191,26 @@ def cmd_add(args):
     require_project()
     text = SETUP_ENV.read_text()
     pkgs = parse_pkg_list(text)
+    names = pkg_names(pkgs)
 
-    added, skipped = [], []
-    for pkg in args.packages:
-        if pkg in pkgs:
-            skipped.append(pkg)
+    added: list[Pkg] = []
+    skipped: list[str] = []
+
+    for raw in args.packages:
+        name, version = parse_pkg_spec(raw)
+        if args.bioc and version:
+            print(
+                f"Warning: --bioc ignores version pin for {name}; "
+                "Bioconductor versions are tied to Bioc releases.",
+                file=sys.stderr,
+            )
+            version = None
+        if name in names:
+            skipped.append(name)
         else:
-            pkgs.append(pkg)
-            added.append(pkg)
+            pkgs.append((name, version))
+            names.append(name)
+            added.append((name, version))
 
     if not added:
         print("Nothing to add — all packages already listed.")
@@ -177,21 +220,29 @@ def cmd_add(args):
 
     print(f"Installing {len(added)} package(s)...")
     if args.bioc:
+        bioc_pkgs = ", ".join(f'"{n}"' for n, _ in added)
         expr = (
             'if (!requireNamespace("BiocManager", quietly = TRUE)) '
             'install.packages("BiocManager"); '
-            f'BiocManager::install(c({", ".join(repr(p) for p in added)}))'
+            f'BiocManager::install(c({bioc_pkgs}))'
         )
+        rscript("-e", expr)
     else:
-        expr = f'install.packages(c({", ".join(repr(p) for p in added)}))'
-    rscript("-e", expr)
+        specs = ", ".join(f'"{pak_spec(n, v)}"' for n, v in added)
+        expr = (
+            'if (!requireNamespace("pak", quietly = TRUE)) '
+            'install.packages("pak"); '
+            f'pak::pkg_install(c({specs}))'
+        )
+        rscript("-e", expr)
 
     renv_snapshot()
 
-    for p in added:
-        print(f"  + {p}")
-    for p in skipped:
-        print(f"  ~ {p} (already listed)")
+    for name, ver in added:
+        label = f"{name}=={ver}" if ver else name
+        print(f"  + {label}")
+    for name in skipped:
+        print(f"  ~ {name} (already listed)")
 
 
 # ---------------------------------------------------------------------------
@@ -203,13 +254,16 @@ def cmd_rm(args):
     text = SETUP_ENV.read_text()
     pkgs = parse_pkg_list(text)
 
-    removed, not_found = [], []
-    for pkg in args.packages:
-        if pkg in pkgs:
-            pkgs.remove(pkg)
-            removed.append(pkg)
+    removed: list[str] = []
+    not_found: list[str] = []
+    for name in args.packages:
+        matched = [(n, v) for n, v in pkgs if n == name]
+        if matched:
+            for entry in matched:
+                pkgs.remove(entry)
+            removed.append(name)
         else:
-            not_found.append(pkg)
+            not_found.append(name)
 
     if not removed:
         print("Nothing to remove — none of the packages are listed.")
