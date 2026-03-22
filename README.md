@@ -1,52 +1,78 @@
-# r-init
+# rv
 
-Lightweight shell tool to scaffold a ready-to-go R project — similar to `uv init` or `bun init`, but for R.
+Lightweight R project manager — similar to `uv` for Python, but for R.
 
-Creates a directory with sensible defaults: git, renv, config, utility helpers, and a standard layout.
+Scaffolds a project with sensible defaults (git, renv, config, helpers) and manages packages from the command line.
 
 ## Installation
 
-Clone the repo and optionally symlink the script onto your PATH:
-
 ```bash
-git clone https://github.com/matthewmazurek/r-init.git ~/.r-init
-ln -s ~/.r-init/init.sh /usr/local/bin/r-init
-```
-
-Or run directly:
-
-```bash
-bash /path/to/r-init/init.sh my_project
+git clone https://github.com/matthewmazurek/rv.git ~/.rv
+chmod +x ~/.rv/rv
+ln -s ~/.rv/rv /usr/local/bin/rv
 ```
 
 ## Usage
 
 ```
-r-init <project_name> [options]
+rv <command> [args...]
 ```
 
-### Options
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `rv init <name>` | Create a new R project |
+| `rv add <pkg>...` | Add packages to the project |
+| `rv rm <pkg>...` | Remove packages from the project |
+| `rv sync` | Install all listed packages |
+| `rv run [script]` | Run an R script |
+
+### `rv init`
+
+```
+rv init <name> [--no-git] [--no-renv] [--rproj] [--slurm] [--force]
+```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--no-git` | git **on** | Skip git initialization |
-| `--no-renv` | renv **on** | Skip renv bootstrap in setup script |
+| `--no-renv` | renv **on** | Skip renv bootstrap |
 | `--rproj` | off | Create an RStudio `.Rproj` file |
 | `--slurm` | off | Include a SLURM job template |
 | `--force` | off | Allow creation in a non-empty directory |
-| `-h, --help` | | Show help |
-
-### Examples
 
 ```bash
-# Defaults: git + renv
-r-init my_analysis
+rv init my_analysis
+rv init my_analysis --rproj --slurm
+rv init my_analysis --no-renv
+```
 
-# Kitchen sink
-r-init my_analysis --rproj --slurm
+### `rv add` / `rv rm`
 
-# Minimal (no git, no renv)
-r-init my_analysis --no-git --no-renv
+```bash
+rv add dplyr ggplot2 data.table
+rv add SingleCellExperiment --bioc
+rv rm dplyr
+```
+
+`add` appends packages to `scripts/setup_env.R`, installs them, and snapshots renv.
+`rm` removes packages from the list and snapshots renv.
+
+### `rv sync`
+
+```bash
+rv sync
+```
+
+Runs `scripts/setup_env.R` to install all listed packages. Useful after cloning an existing project.
+
+### `rv run`
+
+```bash
+rv run                           # runs scripts/run_analysis.R
+rv run scripts/my_script.R       # runs a specific script
+rv run scripts/my_script.R --input data/raw.csv
 ```
 
 ## Generated layout
@@ -71,18 +97,18 @@ my_analysis/
 ```
 
 With `--slurm`: adds `slurm/run_job.sh`.
-With `--rproj`: adds `<project_name>.Rproj`.
+With `--rproj`: adds `<name>.Rproj`.
 
 ## Customization
 
-Templates live in the `templates/` directory next to `init.sh`. Edit them directly to change what gets generated:
+Templates live in `templates/` next to `rv.py`. Edit them to change what gets generated:
 
 - **Verbatim files** are copied as-is (e.g. `templates/R/utils.R`).
-- **`.tmpl` files** undergo `{{PROJECT_NAME}}` substitution before copying (e.g. `templates/README.md.tmpl`).
+- **`.tmpl` files** undergo `{{PROJECT_NAME}}` substitution (e.g. `templates/README.md.tmpl`).
 - **`setup_env_renv.snippet`** is injected into `setup_env.R` when renv is enabled.
 
 ## Requirements
 
-- Bash 4+
-- `sed` (BSD or GNU)
-- `git` (optional, for `--git`)
+- Python 3.10+
+- `git` (optional, for project init)
+- R / `Rscript` (for `add`, `sync`, `run`)

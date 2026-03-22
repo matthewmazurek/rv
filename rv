@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+exec python3 "$(cd "$(dirname "$SOURCE")" && pwd)/rv.py" "$@"
