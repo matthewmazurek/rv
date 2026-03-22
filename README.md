@@ -1,97 +1,119 @@
 # rv
 
-Lightweight R project manager — similar to `uv` for Python, but for R.
+Lightweight R project manager — like `uv` for Python, but for R.
 
-Scaffolds a project with sensible defaults (git, renv, config, helpers) and manages packages from the command line.
+## Install
 
-## Installation
+```bash
+uv tool install git+https://github.com/matthewmazurek/rv.git
+```
+
+<details>
+<summary>Alternative: from source</summary>
 
 ```bash
 git clone https://github.com/matthewmazurek/rv.git ~/.rv
 chmod +x ~/.rv/rv
 ln -s ~/.rv/rv /usr/local/bin/rv
 ```
+</details>
 
-## Usage
+## Quick start
 
+```bash
+rv init my_analysis           # scaffold a new project
+cd my_analysis
+rv add dplyr ggplot2          # add packages
+rv run                        # run the default script
 ```
-rv <command> [args...]
-```
 
-### Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
 | `rv init <name>` | Create a new R project |
-| `rv add <pkg>...` | Add packages to the project |
-| `rv rm <pkg>...` | Remove packages from the project |
+| `rv add <pkg>...` | Add packages |
+| `rv rm <pkg>...` | Remove packages |
+| `rv list` | List declared packages |
+| `rv update [pkg]...` | Update packages to latest |
 | `rv sync` | Install all listed packages |
 | `rv run [script]` | Run an R script |
+| `rv clean` | Remove generated outputs |
 
 ### `rv init`
 
-```
-rv init <name> [--no-git] [--no-renv] [--rproj] [--slurm] [--force] [--no-sync]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--no-git` | git **on** | Skip git initialization |
-| `--no-renv` | renv **on** | Skip renv bootstrap |
-| `--rproj` | off | Create an RStudio `.Rproj` file |
-| `--slurm` | off | Include a SLURM job template |
-| `--force` | off | Allow creation in a non-empty directory |
-| `--no-sync` | sync **on** | Skip running `setup_env.R` after init |
-
 ```bash
-rv init my_analysis
-rv init my_analysis --rproj --slurm
-rv init my_analysis --no-renv
+rv init my_analysis                   # new directory
+rv init .                             # scaffold in current directory
+rv init my_analysis --rproj --slurm   # with RStudio + SLURM support
+rv init my_analysis --docker --ci     # with Dockerfile + GitHub Actions
+rv init my_analysis --apptainer       # with Apptainer definition (HPC)
+rv init my_analysis --no-renv         # skip renv
 ```
+
+Flags: `--no-git`, `--no-renv`, `--rproj`, `--slurm`, `--docker`, `--apptainer`, `--ci`, `--force`, `--no-sync`
 
 ### `rv add` / `rv rm`
 
 ```bash
 rv add dplyr ggplot2 data.table
-rv add Seurat==4.4.0              # pin to a specific version
+rv add Seurat==4.4.0              # pin a version
 rv add SingleCellExperiment --bioc
 rv rm dplyr
 ```
 
-`add` appends packages to `scripts/setup_env.R`, installs them via [`pak`](https://pak.r-lib.org/) (prefers binaries), and snapshots renv.
-`rm` removes packages from the list and snapshots renv.
+Packages are managed in `rproject.toml` and installed via [pak](https://pak.r-lib.org/).
 
-Version pins use `==` syntax (e.g. `Seurat==4.4.0`). Pinned packages are stored as `"pkg@version"` in `setup_env.R` and installed with `pak::pkg_install("pkg@version")`, which prefers pre-built binaries from Posit Package Manager over compiling from source.
-
-### `rv sync`
+### `rv update`
 
 ```bash
-rv sync
+rv update              # update all to latest
+rv update dplyr tidyr  # update specific packages
 ```
-
-Runs `scripts/setup_env.R` to install all listed packages. Useful after cloning an existing project.
 
 ### `rv run`
 
 ```bash
-rv run                           # runs scripts/run_analysis.R
-rv run scripts/my_script.R       # runs a specific script
-rv run scripts/my_script.R --input data/raw.csv
+rv run                                          # default script
+rv run preprocess                               # named alias
+rv run scripts/custom.R -- --input data.csv     # pass extra flags to R script
 ```
 
-## Generated layout
+Script aliases are defined in `rproject.toml`:
+
+```toml
+[scripts]
+default = "scripts/run_analysis.R"
+preprocess = "scripts/preprocess.R"
+```
+
+Flags after `--` are passed to the R script as `--key value` pairs. Inside R, `config/analysis.yaml` provides defaults and CLI flags override any key:
+
+```r
+source("R/init.R")
+# cfg$output  — from YAML default, unless --output was passed
+# cfg$input   — NULL unless --input was passed (or set in YAML)
+# cfg$seed    — NULL unless added to YAML (or passed via CLI)
+```
+
+### `rv clean`
+
+```bash
+rv clean         # clear results/ and logs/
+rv clean --renv  # also remove renv library cache
+```
+
+## Project layout
 
 ```
 my_analysis/
-├── .gitignore
-├── .Rprofile
-├── README.md
+├── rproject.toml              # project manifest
 ├── config/
-│   └── analysis.yaml
+│   └── analysis.yaml    # defaults (output, etc.) — CLI overrides any key
 ├── R/
-│   └── utils.R
+│   ├── init.R           # bootstrap (renv, config + CLI merge)
+│   └── utils.R          # shared helpers
 ├── scripts/
-│   ├── setup_env.R
 │   └── run_analysis.R
 ├── data/
 ├── results/
@@ -100,19 +122,65 @@ my_analysis/
 └── docs/
 ```
 
-With `--slurm`: adds `slurm/run_job.sh`.
+The project manifest (`rproject.toml`) declares packages and script aliases:
+
+```toml
+renv = true
+packages = ["yaml", "dplyr", "Seurat@4.4.0"]
+
+[scripts]
+default = "scripts/run_analysis.R"
+```
+
+With `--slurm`: adds `scripts/slurm_analysis.R` and `slurm/run_job.sh` (array jobs, GPU, email directives).
 With `--rproj`: adds `<name>.Rproj`.
+With `--docker`: adds `Dockerfile`.
+With `--apptainer`: adds `<name>.def`.
+With `--ci`: adds `.github/workflows/r-check.yml`.
 
-## Customization
+## Containers
 
-Templates live in `templates/` next to `rv.py`. Edit them to change what gets generated:
+Scaffold a `Dockerfile` or Apptainer definition at init time, based on [rocker/r-ver](https://rocker-project.org/):
 
-- **Verbatim files** are copied as-is (e.g. `templates/R/utils.R`).
-- **`.tmpl` files** undergo `{{PROJECT_NAME}}` substitution (e.g. `templates/README.md.tmpl`).
-- **`setup_env_renv.snippet`** is injected into `setup_env.R` when renv is enabled.
+```bash
+rv init my_analysis --docker          # adds Dockerfile
+rv init my_analysis --apptainer       # adds my_analysis.def
+```
+
+Then build and run:
+
+```bash
+# Docker
+docker build -t my_analysis .
+docker run my_analysis
+
+# Apptainer (HPC)
+apptainer build my_analysis.sif my_analysis.def
+apptainer run my_analysis.sif
+```
+
+Both install `rv`, sync packages from `rproject.toml`, and run the default script alias via `rv run`.
+
+## CI
+
+Scaffold a GitHub Actions workflow at init time:
+
+```bash
+rv init my_analysis --ci              # adds .github/workflows/r-check.yml
+```
+
+Includes R setup via `r-lib/actions`, renv caching, and a smoke-test run of the analysis.
+
+## Shell completions
+
+```bash
+source ~/.rv/completions/rv.bash   # bash
+source ~/.rv/completions/rv.zsh    # zsh
+source ~/.rv/completions/rv.fish   # fish
+```
 
 ## Requirements
 
-- Python 3.10+
-- `git` (optional, for project init)
-- R / `Rscript` (for `add`, `sync`, `run`)
+- Python 3.11+
+- R / Rscript
+- git (optional)

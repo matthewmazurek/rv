@@ -6,7 +6,16 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
+## Optional directives (uncomment as needed):
+##SBATCH --partition=compute
+##SBATCH --gres=gpu:1
+##SBATCH --array=1-10
+##SBATCH --mail-type=END,FAIL
+##SBATCH --mail-user=
+
 set -euo pipefail
+
+# --- Environment setup ---
 
 module load R
 
@@ -19,4 +28,12 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
-Rscript scripts/run_analysis.R
+# --- Run analysis ---
+
+ARGS=()
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  echo "Running as array job: task ${SLURM_ARRAY_TASK_ID}"
+  ARGS+=(--task-id "${SLURM_ARRAY_TASK_ID}")
+fi
+
+Rscript scripts/slurm_analysis.R "${ARGS[@]}"

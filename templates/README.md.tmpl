@@ -8,13 +8,13 @@ General-purpose R project template.
 {{PROJECT_NAME}}/
 ├── .gitignore
 ├── .Rprofile
+├── rproject.toml
 ├── README.md
 ├── config/
 │   └── analysis.yaml
 ├── R/
 │   └── utils.R
 ├── scripts/
-│   ├── setup_env.R
 │   └── run_analysis.R
 ├── data/
 ├── results/
@@ -29,18 +29,19 @@ General-purpose R project template.
 Open the project in RStudio and run:
 
 ```r
-source("scripts/setup_env.R")
 source("scripts/run_analysis.R")
 ```
 
 ### Command line
 ```bash
-Rscript scripts/run_analysis.R
+rv sync                          # install packages
+rv run                           # run the default script
+Rscript scripts/run_analysis.R   # or run directly
 ```
 
 ## Notes
 
-- Add project-specific package installs to `scripts/setup_env.R`
+- Manage packages with `rv add` / `rv rm` (declared in `rproject.toml`)
 - Put reusable helpers in `R/`
 - Keep raw input data in `data/`
 - Write outputs to `results/`

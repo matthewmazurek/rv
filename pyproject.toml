@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rv-r"
+version = "0.1.0"
+description = "Lightweight R project manager"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Matthew Mazurek" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/matthewmazurek/rv"
+Repository = "https://github.com/matthewmazurek/rv"
+
+[project.scripts]
+rv = "rv:main"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["rv.py", "templates"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "rv.py",
+    "rv",
+    "templates",
+    "completions",
+    "tests",
+    "README.md",
+    "pyproject.toml",
+]

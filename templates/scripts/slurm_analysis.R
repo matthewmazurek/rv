@@ -1,0 +1,33 @@
+source("R/init.R")
+# Provides: cfg
+# cfg — analysis.yaml defaults merged with CLI overrides (CLI wins)
+
+if (!is.null(cfg$seed)) set.seed(cfg$seed)
+
+# SLURM environment — available when submitted via sbatch
+slurm <- list(
+  job_id   = Sys.getenv("SLURM_JOB_ID", ""),
+  task_id  = Sys.getenv("SLURM_ARRAY_TASK_ID", ""),
+  cpus     = as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")),
+  mem_mb   = Sys.getenv("SLURM_MEM_PER_NODE", ""),
+  ntasks   = Sys.getenv("SLURM_NTASKS", "1"),
+  nodelist = Sys.getenv("SLURM_NODELIST", "")
+)
+
+workers <- if (identical(cfg$workers, "auto")) slurm$cpus else cfg$workers %||% slurm$cpus
+
+output_path <- cfg$output %||% "results/output.txt"
+
+lines <- c(
+  paste("Timestamp:", Sys.time()),
+  paste("Project:", cfg$project_name %||% "unknown"),
+  paste("Working directory:", getwd()),
+  paste("Input:", cfg$input %||% "<none>"),
+  paste("SLURM Job:", slurm$job_id %||% "<local>"),
+  paste("Workers:", workers)
+)
+
+writeLines(lines, con = output_path)
+
+message("Wrote output to: ", output_path)
+message_block("Analysis complete")

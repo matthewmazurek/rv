@@ -16,33 +16,18 @@ load_config <- function(path = "config/analysis.yaml") {
 }
 
 parse_args <- function() {
-  args <- commandArgs(trailingOnly = TRUE)
+  raw <- commandArgs(trailingOnly = TRUE)
+  out <- list()
 
-  out <- list(
-    input = NULL,
-    output = NULL,
-    config = "config/analysis.yaml"
-  )
-
-  if (length(args) == 0) {
-    return(out)
-  }
+  if (length(raw) == 0) return(out)
 
   i <- 1L
-  while (i <= length(args)) {
-    key <- args[[i]]
-
-    if (key %in% c("--input", "--output", "--config")) {
-      if (i == length(args)) {
-        stop("Missing value for argument: ", key)
-      }
-      value <- args[[i + 1L]]
-      nm <- substring(key, 3L)
-      out[[nm]] <- value
-      i <- i + 2L
-    } else {
-      stop("Unknown argument: ", key)
-    }
+  while (i <= length(raw)) {
+    key <- raw[[i]]
+    if (!startsWith(key, "--")) stop("Expected --flag, got: ", key)
+    if (i == length(raw)) stop("Missing value for argument: ", key)
+    out[[substring(key, 3L)]] <- raw[[i + 1L]]
+    i <- i + 2L
   }
 
   out

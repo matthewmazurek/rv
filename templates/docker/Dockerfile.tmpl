@@ -1,0 +1,28 @@
+FROM rocker/r-ver:4.4.0
+
+LABEL org.opencontainers.image.title="{{PROJECT_NAME}}"
+
+# System dependencies for common R packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libxml2-dev \
+    libfontconfig1-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+RUN uv tool install git+https://github.com/matthewmazurek/rv.git
+ENV PATH="/root/.local/bin:$PATH"
+
+WORKDIR /project
+COPY . .
+
+RUN rv sync
+
+CMD ["rv", "run"]
