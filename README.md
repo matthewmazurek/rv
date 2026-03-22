@@ -31,7 +31,7 @@ rv <command> [args...]
 ### `rv init`
 
 ```
-rv init <name> [--no-git] [--no-renv] [--rproj] [--slurm] [--force]
+rv init <name> [--no-git] [--no-renv] [--rproj] [--slurm] [--force] [--no-sync]
 ```
 
 | Flag | Default | Description |
@@ -41,6 +41,7 @@ rv init <name> [--no-git] [--no-renv] [--rproj] [--slurm] [--force]
 | `--rproj` | off | Create an RStudio `.Rproj` file |
 | `--slurm` | off | Include a SLURM job template |
 | `--force` | off | Allow creation in a non-empty directory |
+| `--no-sync` | sync **on** | Skip running `setup_env.R` after init |
 
 ```bash
 rv init my_analysis

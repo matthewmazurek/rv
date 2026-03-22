@@ -167,8 +167,18 @@ def cmd_init(args):
         else:
             print("Warning: git not found; skipping git init.", file=sys.stderr)
 
+    # Sync (install packages + bootstrap renv)
+    if args.sync:
+        print(f"Setting up environment...")
+        result = subprocess.run(
+            ["Rscript", "scripts/setup_env.R"],
+            cwd=str(project),
+        )
+        if result.returncode != 0:
+            print("Warning: setup_env.R failed. Run 'rv sync' to retry.", file=sys.stderr)
+
     # Summary
-    print(f"Initialized R project: {project}")
+    print(f"\nInitialized R project: {project}")
     if args.git:
         print("  + git")
     if args.renv:
@@ -177,10 +187,7 @@ def cmd_init(args):
         print("  + RStudio .Rproj")
     if args.slurm:
         print("  + SLURM template")
-    print()
-    print(f"Next steps:")
-    print(f"  cd {project}")
-    print(f"  Rscript scripts/setup_env.R")
+    print(f"\n  cd {project}")
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +324,8 @@ def main():
     p_init.add_argument("--rproj", action="store_true", help="Create .Rproj file")
     p_init.add_argument("--slurm", action="store_true", help="Include SLURM template")
     p_init.add_argument("--force", action="store_true", help="Allow non-empty directory")
+    p_init.add_argument("--no-sync", dest="sync", action="store_false", default=True,
+                        help="Skip running setup_env.R after init")
     p_init.set_defaults(func=cmd_init)
 
     # rv add
