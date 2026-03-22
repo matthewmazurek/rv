@@ -1,0 +1,8 @@
+options(
+  repos = c(CRAN = "https://cloud.r-project.org"),
+  Ncpus = max(1L, parallel::detectCores(logical = FALSE) - 1L)
+)
+
+if (file.exists("renv/activate.R")) {
+  source("renv/activate.R")
+}

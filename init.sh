@@ -1,52 +1,61 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR/templates"
+
 usage() {
   cat <<'EOF'
 Usage:
-  init_r_project.sh <project_name> [options]
+  r-init <project_name> [options]
 
 Options:
-  --git         Initialize a git repository
-  --renv        Add renv bootstrap to setup script
+  --no-git      Skip git initialization (default: git enabled)
+  --no-renv     Skip renv bootstrap (default: renv enabled)
   --rproj       Create an RStudio .Rproj file
+  --slurm       Include SLURM job template
   --force       Allow creation in a non-empty directory
   -h, --help    Show this help message
 
 Examples:
-  init_r_project.sh my_analysis
-  init_r_project.sh my_analysis --git --renv --rproj
+  r-init my_analysis
+  r-init my_analysis --rproj --slurm
+  r-init my_analysis --no-renv
 EOF
 }
 
+# --- Helpers ----------------------------------------------------------------
+
+copy_template() {
+  cp "$TEMPLATE_DIR/$1" "$PROJECT_DIR/$2"
+}
+
+render_template() {
+  sed -e "s|{{PROJECT_NAME}}|${PROJECT_NAME}|g" \
+    "$TEMPLATE_DIR/$1" > "$PROJECT_DIR/$2"
+}
+
+log_item() {
+  printf "  %s %s\n" "$1" "$2"
+}
+
+# --- Parse arguments --------------------------------------------------------
+
 PROJECT_NAME=""
-INIT_GIT=0
-INIT_RENV=0
+INIT_GIT=1
+INIT_RENV=1
 INIT_RPROJ=0
+INIT_SLURM=0
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --git)
-      INIT_GIT=1
-      shift
-      ;;
-    --renv)
-      INIT_RENV=1
-      shift
-      ;;
-    --rproj)
-      INIT_RPROJ=1
-      shift
-      ;;
-    --force)
-      FORCE=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
+    --no-git)   INIT_GIT=0;  shift ;;
+    --no-renv)  INIT_RENV=0; shift ;;
+    --rproj)    INIT_RPROJ=1; shift ;;
+    --slurm)    INIT_SLURM=1; shift ;;
+    --force)    FORCE=1;     shift ;;
+    -h|--help)  usage; exit 0 ;;
     -*)
       echo "Unknown option: $1" >&2
       usage
@@ -73,339 +82,91 @@ fi
 
 PROJECT_DIR="$PROJECT_NAME"
 
+# --- Validate target directory ----------------------------------------------
+
 if [[ -e "$PROJECT_DIR" ]]; then
   if [[ ! -d "$PROJECT_DIR" ]]; then
     echo "Error: $PROJECT_DIR exists and is not a directory." >&2
     exit 1
   fi
-
-  if [[ "$FORCE" -ne 1 ]] && [[ -n "$(find "$PROJECT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+  if [[ "$FORCE" -ne 1 ]] && [[ -n "$(ls -A "$PROJECT_DIR" 2>/dev/null)" ]]; then
     echo "Error: $PROJECT_DIR already exists and is not empty. Use --force to continue." >&2
     exit 1
   fi
 fi
 
-mkdir -p "$PROJECT_DIR"/{R,scripts,slurm,config,data,results,logs,docs}
+# --- Create directory structure ---------------------------------------------
 
-cat > "$PROJECT_DIR/.gitignore" <<'EOF'
-.Rhistory
-.RData
-.Ruserdata
-.Rproj.user
-.DS_Store
+dirs=(R scripts config data results logs docs tests)
+if [[ "$INIT_SLURM" -eq 1 ]]; then
+  dirs+=(slurm)
+fi
 
-renv/library/
-renv/python/
-renv/staging/
+for d in "${dirs[@]}"; do
+  mkdir -p "$PROJECT_DIR/$d"
+done
 
-results/
-logs/*.out
-logs/*.err
-EOF
+touch "$PROJECT_DIR/tests/.gitkeep"
 
-cat > "$PROJECT_DIR/.Rprofile" <<'EOF'
-options(
-  repos = c(CRAN = "https://cloud.r-project.org"),
-  Ncpus = max(1L, parallel::detectCores(logical = FALSE) - 1L)
-)
+# --- Copy templates ---------------------------------------------------------
 
-if (file.exists("renv/activate.R")) {
-  source("renv/activate.R")
-}
-EOF
+copy_template   "gitignore"              ".gitignore"
+copy_template   "Rprofile"               ".Rprofile"
+copy_template   "R/utils.R"              "R/utils.R"
+copy_template   "scripts/run_analysis.R" "scripts/run_analysis.R"
 
-cat > "$PROJECT_DIR/README.md" <<EOF
-# ${PROJECT_NAME}
+render_template "README.md.tmpl"              "README.md"
+render_template "config/analysis.yaml.tmpl"   "config/analysis.yaml"
 
-General-purpose R project template.
-
-## Layout
-
-\`\`\`
-${PROJECT_NAME}/
-├── .gitignore
-├── .Rprofile
-├── README.md
-├── config/
-│   └── analysis.yaml
-├── R/
-│   └── utils.R
-├── scripts/
-│   ├── setup_env.R
-│   └── run_analysis.R
-├── slurm/
-│   └── run_job.sh
-├── data/
-├── results/
-├── logs/
-└── docs/
-\`\`\`
-
-## Quick start
-
-### Interactive
-Open the project in RStudio and run:
-
-\`\`\`r
-source("scripts/setup_env.R")
-source("scripts/run_analysis.R")
-\`\`\`
-
-### Command line
-\`\`\`bash
-Rscript scripts/run_analysis.R
-\`\`\`
-
-### SLURM
-Edit \`slurm/run_job.sh\`, then submit:
-
-\`\`\`bash
-sbatch slurm/run_job.sh
-\`\`\`
-
-## Notes
-
-- Add project-specific package installs to \`scripts/setup_env.R\`
-- Put reusable helpers in \`R/\`
-- Keep raw input data in \`data/\`
-- Write outputs to \`results/\`
-EOF
-
-cat > "$PROJECT_DIR/config/analysis.yaml" <<'EOF'
-project_name: "replace_me"
-seed: 123
-future_workers: 1
-EOF
-
-cat > "$PROJECT_DIR/R/utils.R" <<'EOF'
-suppressPackageStartupMessages({
-  library(yaml)
-})
-
-`%||%` <- function(x, y) if (is.null(x)) y else x
-
-get_project_root <- function() {
-  normalizePath(getwd(), winslash = "/", mustWork = TRUE)
-}
-
-load_config <- function(path = "config/analysis.yaml") {
-  if (!file.exists(path)) {
-    stop("Config file not found: ", path)
-  }
-  yaml::read_yaml(path)
-}
-
-parse_args <- function() {
-  args <- commandArgs(trailingOnly = TRUE)
-
-  out <- list(
-    input = NULL,
-    output = NULL,
-    config = "config/analysis.yaml"
-  )
-
-  if (length(args) == 0) {
-    return(out)
-  }
-
-  i <- 1L
-  while (i <= length(args)) {
-    key <- args[[i]]
-
-    if (key %in% c("--input", "--output", "--config")) {
-      if (i == length(args)) {
-        stop("Missing value for argument: ", key)
-      }
-      value <- args[[i + 1L]]
-      nm <- substring(key, 3L)
-      out[[nm]] <- value
-      i <- i + 2L
-    } else {
-      stop("Unknown argument: ", key)
-    }
-  }
-
-  out
-}
-
-ensure_dir <- function(path) {
-  dir.create(path, recursive = TRUE, showWarnings = FALSE)
-  invisible(path)
-}
-
-message_block <- function(...) {
-  cat("\n", paste0(..., collapse = ""), "\n", sep = "")
-}
-EOF
-
+# setup_env.R — conditionally inject renv blocks
 if [[ "$INIT_RENV" -eq 1 ]]; then
-  RENVTEXT='
-if (!requireNamespace("renv", quietly = TRUE)) {
-  install.packages("renv")
-}
-
-if (!file.exists("renv.lock")) {
-  renv::init(bare = TRUE)
-} else {
-  renv::activate()
-}
-'
+  {
+    cat "$TEMPLATE_DIR/scripts/setup_env_renv.snippet"
+    sed -e '/{{RENV_BLOCK}}/d' \
+        -e 's|{{RENV_SNAPSHOT}}|renv::snapshot(prompt = FALSE)|g' \
+        "$TEMPLATE_DIR/scripts/setup_env.R"
+  } > "$PROJECT_DIR/scripts/setup_env.R"
 else
-  RENVTEXT=''
+  sed -e '/{{RENV_BLOCK}}/d' \
+      -e '/{{RENV_SNAPSHOT}}/d' \
+      "$TEMPLATE_DIR/scripts/setup_env.R" > "$PROJECT_DIR/scripts/setup_env.R"
 fi
 
-cat > "$PROJECT_DIR/scripts/setup_env.R" <<EOF
-# Run this to initialize the project environment.
-# Add your project-specific package installs below.
+# slurm (opt-in)
+if [[ "$INIT_SLURM" -eq 1 ]]; then
+  render_template "slurm/run_job.sh.tmpl" "slurm/run_job.sh"
+  chmod +x "$PROJECT_DIR/slurm/run_job.sh"
+fi
 
-${RENVTEXT}
-required_pkgs <- c(
-  "yaml"
-)
-
-missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing_pkgs) > 0) {
-  install.packages(missing_pkgs)
-}
-
-# Add project-specific packages here, for example:
-# install.packages(c("dplyr", "ggplot2", "data.table"))
-# if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-# BiocManager::install(c("SingleCellExperiment"))
-
-$( [[ "$INIT_RENV" -eq 1 ]] && cat <<'EOT'
-renv::snapshot(prompt = FALSE)
-EOT
-)
-
-message("Environment setup complete.")
-EOF
-
-cat > "$PROJECT_DIR/scripts/run_analysis.R" <<'EOF'
-suppressPackageStartupMessages({
-  if (file.exists("renv/activate.R")) source("renv/activate.R")
-  source("R/utils.R")
-})
-
-args <- parse_args()
-cfg  <- load_config(args$config)
-
-ensure_dir("results")
-ensure_dir("logs")
-
-set.seed(cfg$seed %||% 123)
-
-workers <- cfg$future_workers %||% 1
-
-message_block("Starting analysis")
-message("Working directory: ", getwd())
-message("Project root: ", get_project_root())
-message("Input: ", args$input %||% "<none>")
-message("Output: ", args$output %||% "results/output.txt")
-
-# ------------------------------------------------------------------
-# TEMPLATE SECTION
-# Replace this with your actual workflow.
-# ------------------------------------------------------------------
-
-output_path <- args$output %||% "results/output.txt"
-
-lines <- c(
-  paste("Timestamp:", Sys.time()),
-  paste("Project:", cfg$project_name %||% "unknown"),
-  paste("Working directory:", getwd()),
-  paste("Input:", args$input %||% "<none>")
-)
-
-writeLines(lines, con = output_path)
-
-message("Wrote output to: ", output_path)
-message_block("Analysis complete")
-EOF
-
-cat > "$PROJECT_DIR/slurm/run_job.sh" <<EOF
-#!/bin/bash
-#SBATCH --job-name=${PROJECT_NAME}
-#SBATCH --time=02:00:00
-#SBATCH --mem=8G
-#SBATCH --cpus-per-task=2
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
-
-set -euo pipefail
-
-module load R
-
-PROJECT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
-cd "\$PROJECT_DIR"
-
-mkdir -p logs results
-
-export OMP_NUM_THREADS="\${SLURM_CPUS_PER_TASK:-1}"
-export OPENBLAS_NUM_THREADS="\${SLURM_CPUS_PER_TASK:-1}"
-export MKL_NUM_THREADS="\${SLURM_CPUS_PER_TASK:-1}"
-
-Rscript scripts/run_analysis.R
-EOF
-
-chmod +x "$PROJECT_DIR/slurm/run_job.sh"
-
+# .Rproj (opt-in)
 if [[ "$INIT_RPROJ" -eq 1 ]]; then
-  cat > "$PROJECT_DIR/${PROJECT_NAME}.Rproj" <<'EOF'
-Version: 1.0
-
-RestoreWorkspace: No
-SaveWorkspace: No
-AlwaysSaveHistory: Default
-
-EnableCodeIndexing: Yes
-UseSpacesForTab: Yes
-NumSpacesForTab: 2
-Encoding: UTF-8
-
-RnwWeave: Sweave
-LaTeX: pdfLaTeX
-EOF
+  copy_template "Rproj.tmpl" "${PROJECT_NAME}.Rproj"
 fi
 
-python3 - <<PY
-from pathlib import Path
-p = Path("$PROJECT_DIR/config/analysis.yaml")
-txt = p.read_text()
-txt = txt.replace('project_name: "replace_me"', 'project_name: "$PROJECT_NAME"')
-p.write_text(txt)
-PY
+# --- Git init ---------------------------------------------------------------
 
 if [[ "$INIT_GIT" -eq 1 ]]; then
   if command -v git >/dev/null 2>&1; then
     if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-      git -C "$PROJECT_DIR" init >/dev/null
+      git -C "$PROJECT_DIR" init -q
     fi
   else
     echo "Warning: git not found; skipping git init." >&2
   fi
 fi
 
-echo "Initialized R project at: $PROJECT_DIR"
+# --- Summary ----------------------------------------------------------------
 
-if [[ "$INIT_GIT" -eq 1 ]]; then
-  echo "  - git: enabled"
-fi
-if [[ "$INIT_RENV" -eq 1 ]]; then
-  echo "  - renv bootstrap: enabled"
-fi
-if [[ "$INIT_RPROJ" -eq 1 ]]; then
-  echo "  - RStudio project file: created"
-fi
+echo "Initialized R project: $PROJECT_DIR"
+
+[[ "$INIT_GIT"   -eq 1 ]] && log_item "+" "git"
+[[ "$INIT_RENV"  -eq 1 ]] && log_item "+" "renv"
+[[ "$INIT_RPROJ" -eq 1 ]] && log_item "+" "RStudio .Rproj"
+[[ "$INIT_SLURM" -eq 1 ]] && log_item "+" "SLURM template"
 
 cat <<EOF
 
 Next steps:
   cd $PROJECT_DIR
-  R
-  source("scripts/setup_env.R")
-
-Or from the shell:
-  cd $PROJECT_DIR
-  Rscript scripts/run_analysis.R
+  Rscript scripts/setup_env.R
 EOF

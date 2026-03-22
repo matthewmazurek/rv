@@ -1,0 +1,15 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user
+.DS_Store
+.httr-oauth
+.Renviron
+
+renv/library/
+renv/python/
+renv/staging/
+
+results/
+logs/*.out
+logs/*.err

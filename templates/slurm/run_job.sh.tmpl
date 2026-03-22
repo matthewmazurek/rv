@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH --job-name={{PROJECT_NAME}}
+#SBATCH --time=02:00:00
+#SBATCH --mem=8G
+#SBATCH --cpus-per-task=2
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
+
+set -euo pipefail
+
+module load R
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_DIR"
+
+mkdir -p logs results
+
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+
+Rscript scripts/run_analysis.R

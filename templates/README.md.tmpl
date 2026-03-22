@@ -1,0 +1,46 @@
+# {{PROJECT_NAME}}
+
+General-purpose R project template.
+
+## Layout
+
+```
+{{PROJECT_NAME}}/
+├── .gitignore
+├── .Rprofile
+├── README.md
+├── config/
+│   └── analysis.yaml
+├── R/
+│   └── utils.R
+├── scripts/
+│   ├── setup_env.R
+│   └── run_analysis.R
+├── data/
+├── results/
+├── logs/
+├── tests/
+└── docs/
+```
+
+## Quick start
+
+### Interactive
+Open the project in RStudio and run:
+
+```r
+source("scripts/setup_env.R")
+source("scripts/run_analysis.R")
+```
+
+### Command line
+```bash
+Rscript scripts/run_analysis.R
+```
+
+## Notes
+
+- Add project-specific package installs to `scripts/setup_env.R`
+- Put reusable helpers in `R/`
+- Keep raw input data in `data/`
+- Write outputs to `results/`
