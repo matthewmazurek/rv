@@ -12,6 +12,9 @@ def init_args(tmp_path):
         renv=True,
         rproj=False,
         slurm=False,
+        docker=False,
+        apptainer=False,
+        ci=False,
         force=False,
         sync=False,
     )

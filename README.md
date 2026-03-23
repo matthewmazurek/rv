@@ -1,6 +1,8 @@
 # rv
 
-Lightweight R project manager — like `uv` for Python, but for R.
+Lightweight R project manager — like [`uv`](https://github.com/astral-sh/uv) for Python, but for R.
+
+`rv` gives R the same workflow that `uv` brought to Python: a single CLI that scaffolds opinionated project structures, manages dependencies through a human-readable `rproject.toml` manifest, and handles the full lifecycle — from adding packages (`rv add dplyr`) and running scripts (`rv run`) to generating SLURM batch jobs, Dockerfiles, and CI pipelines — while using [renv](https://rstudio.github.io/renv/) under the hood for library isolation and [pak](https://pak.r-lib.org/) for fast parallel installs, so you never have to drop into an R console just to set up or reproduce a project.
 
 ## Install
 

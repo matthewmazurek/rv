@@ -19,7 +19,13 @@ set -euo pipefail
 
 module load R
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# rv (https://github.com/matthewmazurek/rv) must be on PATH.
+# Uncomment/adjust ONE of the following:
+export PATH="$HOME/.local/bin:$PATH"          # uv tool install (default)
+# source activate ~/miniforge3/envs/rv-tools  # conda environment
+# module load rv                              # site module
+
+PROJECT_DIR="$HOME/projects/{{PROJECT_NAME}}"  # update to match your project path
 cd "$PROJECT_DIR"
 
 mkdir -p logs results
@@ -29,11 +35,6 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 # --- Run analysis ---
+# rv run auto-syncs packages on first run (use --no-sync to skip)
 
-ARGS=()
-if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
-  echo "Running as array job: task ${SLURM_ARRAY_TASK_ID}"
-  ARGS+=(--task-id "${SLURM_ARRAY_TASK_ID}")
-fi
-
-Rscript scripts/slurm_analysis.R "${ARGS[@]}"
+rv run -- "$@"

@@ -21,9 +21,15 @@ def get_version() -> str:
         try:
             result = subprocess.run(
                 ["git", "-C", str(RV_DIR), "describe", "--tags", "--always"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
-            __version__ = result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else "dev"
+            __version__ = (
+                result.stdout.strip()
+                if result.returncode == 0 and result.stdout.strip()
+                else "dev"
+            )
         except Exception:
             __version__ = "dev"
     return __version__
@@ -63,6 +69,7 @@ def require_project():
 # ---------------------------------------------------------------------------
 # rproject.toml config
 # ---------------------------------------------------------------------------
+
 
 def read_rv_config(path: Path | None = None) -> dict:
     """Read rproject.toml."""
@@ -125,23 +132,28 @@ def pkgs_to_entries(pkgs: list[Pkg]) -> list[str]:
 # R code generation
 # ---------------------------------------------------------------------------
 
+
 def build_sync_script(config: dict) -> str:
     """Generate R code to install all packages from rproject.toml."""
     lines: list[str] = []
 
     if config.get("renv", False):
-        lines.extend([
-            'if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")',
-            "",
-            "if (!file.exists(\"renv.lock\")) {",
-            "  renv::init(bare = TRUE)",
-            "} else {",
-            "  renv::activate()",
-            "}",
-            "",
-        ])
+        lines.extend(
+            [
+                'if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")',
+                "",
+                'if (!file.exists("renv.lock")) {',
+                "  renv::init(bare = TRUE)",
+                "} else {",
+                "  renv::activate()",
+                "}",
+                "",
+            ]
+        )
 
-    lines.append('if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")')
+    lines.append(
+        'if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")'
+    )
 
     pkgs = config.get("packages", [])
     if pkgs:
@@ -166,6 +178,7 @@ def run_r_code(code: str, cwd: str | None = None) -> subprocess.CompletedProcess
 # Script aliases
 # ---------------------------------------------------------------------------
 
+
 def load_script_aliases() -> dict[str, str]:
     """Load script aliases from rproject.toml."""
     if not RV_CONFIG.exists():
@@ -180,20 +193,45 @@ def rscript(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["Rscript", *args])
 
 
-def renv_snapshot():
-    """Snapshot renv if enabled and lockfile exists."""
+def renv_snapshot() -> bool:
+    """Snapshot renv if enabled and lockfile exists.
+
+    Returns True if snapshot succeeded or was skipped, False on failure.
+    On failure, attempts to restore missing dependencies and retry once.
+    """
     if RV_CONFIG.exists():
         config = read_rv_config()
         if not config.get("renv", False):
-            return
-    if Path("renv.lock").exists():
-        print("Updating renv.lock...")
-        rscript("-e", "renv::snapshot(prompt = FALSE)")
+            return True
+    if not Path("renv.lock").exists():
+        return True
+
+    print("Updating renv.lock...")
+    result = rscript("-e", "renv::snapshot(prompt = FALSE)")
+    if result.returncode == 0:
+        return True
+
+    print(
+        "Snapshot failed — attempting to restore missing dependencies...",
+        file=sys.stderr,
+    )
+    repair = rscript("-e", "renv::install()")
+    if repair.returncode == 0:
+        result = rscript("-e", "renv::snapshot(prompt = FALSE)")
+        if result.returncode == 0:
+            return True
+
+    print(
+        "Warning: renv.lock was NOT updated. Run `renv::status()` in R for details.",
+        file=sys.stderr,
+    )
+    return False
 
 
 # ---------------------------------------------------------------------------
 # rv init
 # ---------------------------------------------------------------------------
+
 
 def copy_template(src: str, dest: Path):
     shutil.copy2(TEMPLATE_DIR / src, dest)
@@ -241,14 +279,20 @@ def cmd_init(args):
 
     # Rendered templates
     render_template("README.md.tmpl", project / "README.md", variables)
-    config_tmpl = "config/analysis.yaml.slurm.tmpl" if args.slurm else "config/analysis.yaml.tmpl"
+    config_tmpl = (
+        "config/analysis.yaml.slurm.tmpl" if args.slurm else "config/analysis.yaml.tmpl"
+    )
     render_template(config_tmpl, project / "config" / "analysis.yaml", variables)
 
     # Optional: slurm
     default_script = "scripts/run_analysis.R"
     if args.slurm:
-        copy_template("scripts/slurm_analysis.R", project / "scripts" / "slurm_analysis.R")
-        render_template("slurm/run_job.sh.tmpl", project / "slurm" / "run_job.sh", variables)
+        copy_template(
+            "scripts/slurm_analysis.R", project / "scripts" / "slurm_analysis.R"
+        )
+        render_template(
+            "slurm/run_job.sh.tmpl", project / "slurm" / "run_job.sh", variables
+        )
         (project / "slurm" / "run_job.sh").chmod(0o755)
         default_script = "scripts/slurm_analysis.R"
 
@@ -270,12 +314,18 @@ def cmd_init(args):
 
     # Optional: Apptainer
     if args.apptainer:
-        render_template("docker/Apptainer.def.tmpl", project / f"{project_name}.def", variables)
+        render_template(
+            "docker/Apptainer.def.tmpl", project / f"{project_name}.def", variables
+        )
 
     # Optional: CI
     if args.ci:
         (project / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
-        render_template("ci/r-check.yml.tmpl", project / ".github" / "workflows" / "r-check.yml", variables)
+        render_template(
+            "ci/r-check.yml.tmpl",
+            project / ".github" / "workflows" / "r-check.yml",
+            variables,
+        )
 
     # Git init
     if args.git:
@@ -291,7 +341,10 @@ def cmd_init(args):
         script = build_sync_script(config)
         result = run_r_code(script, cwd=str(project))
         if result.returncode != 0:
-            print("Warning: environment setup failed. Run 'rv sync' to retry.", file=sys.stderr)
+            print(
+                "Warning: environment setup failed. Run 'rv sync' to retry.",
+                file=sys.stderr,
+            )
 
     # Summary
     print(f"\nInitialized R project: {project_name}")
@@ -316,6 +369,7 @@ def cmd_init(args):
 # ---------------------------------------------------------------------------
 # rv add
 # ---------------------------------------------------------------------------
+
 
 def cmd_add(args):
     require_project()
@@ -355,17 +409,21 @@ def cmd_add(args):
         expr = (
             'if (!requireNamespace("BiocManager", quietly = TRUE)) '
             'install.packages("BiocManager"); '
-            f'BiocManager::install(c({bioc_pkgs}))'
+            f"BiocManager::install(c({bioc_pkgs}))"
         )
-        rscript("-e", expr)
+        result = rscript("-e", expr)
     else:
         specs = ", ".join(f'"{pak_spec(n, v)}"' for n, v in added)
         expr = (
             'if (!requireNamespace("pak", quietly = TRUE)) '
             'install.packages("pak"); '
-            f'pak::pkg_install(c({specs}))'
+            f"pak::pkg_install(c({specs}))"
         )
-        rscript("-e", expr)
+        result = rscript("-e", expr)
+
+    if result.returncode != 0:
+        print("Error: package installation failed.", file=sys.stderr)
+        sys.exit(result.returncode)
 
     renv_snapshot()
 
@@ -379,6 +437,7 @@ def cmd_add(args):
 # ---------------------------------------------------------------------------
 # rv rm
 # ---------------------------------------------------------------------------
+
 
 def cmd_rm(args):
     require_project()
@@ -414,6 +473,7 @@ def cmd_rm(args):
 # rv list
 # ---------------------------------------------------------------------------
 
+
 def cmd_list(args):
     require_project()
     pkgs = config_to_pkgs(read_rv_config())
@@ -427,6 +487,7 @@ def cmd_list(args):
 # ---------------------------------------------------------------------------
 # rv update
 # ---------------------------------------------------------------------------
+
 
 def cmd_update(args):
     require_project()
@@ -459,10 +520,15 @@ def cmd_update(args):
     expr = (
         'if (!requireNamespace("pak", quietly = TRUE)) '
         'install.packages("pak"); '
-        f'pak::pkg_install(c({specs}))'
+        f"pak::pkg_install(c({specs}))"
     )
     print(f"Updating {len(targets)} package(s)...")
-    rscript("-e", expr)
+    result = rscript("-e", expr)
+
+    if result.returncode != 0:
+        print("Error: package update failed.", file=sys.stderr)
+        sys.exit(result.returncode)
+
     renv_snapshot()
 
     for name, _ in targets:
@@ -473,20 +539,31 @@ def cmd_update(args):
 # rv sync
 # ---------------------------------------------------------------------------
 
-def cmd_sync(args):
-    require_project()
+
+def sync_packages() -> int:
+    """Sync packages from rproject.toml. Returns the process exit code."""
     config = read_rv_config()
     print("Syncing packages...")
     script = build_sync_script(config)
-    result = run_r_code(script)
-    sys.exit(result.returncode)
+    return run_r_code(script).returncode
+
+
+def cmd_sync(args):
+    require_project()
+    sys.exit(sync_packages())
 
 
 # ---------------------------------------------------------------------------
 # rv run
 # ---------------------------------------------------------------------------
 
+
 def cmd_run(args):
+    if args.sync and RV_CONFIG.exists():
+        rc = sync_packages()
+        if rc != 0:
+            sys.exit(rc)
+
     aliases = load_script_aliases()
     name = args.script
 
@@ -499,7 +576,9 @@ def cmd_run(args):
 
     if not Path(script).exists():
         if name and name in aliases:
-            sys.exit(f"Error: script alias '{name}' points to {script}, which was not found.")
+            sys.exit(
+                f"Error: script alias '{name}' points to {script}, which was not found."
+            )
         sys.exit(f"Error: {script} not found.")
 
     extra = args.extra
@@ -512,6 +591,7 @@ def cmd_run(args):
 # ---------------------------------------------------------------------------
 # rv clean
 # ---------------------------------------------------------------------------
+
 
 def _clear_dir(path: Path) -> int:
     """Remove all contents of a directory, return count of items removed."""
@@ -557,24 +637,42 @@ def cmd_clean(args):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(prog="rv", description="Lightweight R project manager")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {get_version()}")
+    parser = argparse.ArgumentParser(
+        prog="rv", description="Lightweight R project manager"
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {get_version()}"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # rv init
     p_init = sub.add_parser("init", help="Create a new R project")
-    p_init.add_argument("name", help="Project name (becomes directory name, or '.' for current dir)")
+    p_init.add_argument(
+        "name", help="Project name (becomes directory name, or '.' for current dir)"
+    )
     p_init.add_argument("--no-git", dest="git", action="store_false", default=True)
     p_init.add_argument("--no-renv", dest="renv", action="store_false", default=True)
     p_init.add_argument("--rproj", action="store_true", help="Create .Rproj file")
     p_init.add_argument("--slurm", action="store_true", help="Include SLURM template")
     p_init.add_argument("--docker", action="store_true", help="Include Dockerfile")
-    p_init.add_argument("--apptainer", action="store_true", help="Include Apptainer definition")
-    p_init.add_argument("--ci", action="store_true", help="Include GitHub Actions CI workflow")
-    p_init.add_argument("--force", action="store_true", help="Allow non-empty directory")
-    p_init.add_argument("--no-sync", dest="sync", action="store_false", default=True,
-                        help="Skip initial package sync")
+    p_init.add_argument(
+        "--apptainer", action="store_true", help="Include Apptainer definition"
+    )
+    p_init.add_argument(
+        "--ci", action="store_true", help="Include GitHub Actions CI workflow"
+    )
+    p_init.add_argument(
+        "--force", action="store_true", help="Allow non-empty directory"
+    )
+    p_init.add_argument(
+        "--no-sync",
+        dest="sync",
+        action="store_false",
+        default=True,
+        help="Skip initial package sync",
+    )
     p_init.set_defaults(func=cmd_init)
 
     # rv add
@@ -594,7 +692,9 @@ def main():
 
     # rv update
     p_update = sub.add_parser("update", help="Update packages to latest versions")
-    p_update.add_argument("packages", nargs="*", help="Package(s) to update (default: all)")
+    p_update.add_argument(
+        "packages", nargs="*", help="Package(s) to update (default: all)"
+    )
     p_update.set_defaults(func=cmd_update)
 
     # rv sync
@@ -603,13 +703,26 @@ def main():
 
     # rv run
     p_run = sub.add_parser("run", help="Run an R script")
-    p_run.add_argument("script", nargs="?", help="Script path (default: scripts/run_analysis.R)")
-    p_run.add_argument("extra", nargs=argparse.REMAINDER, help="Extra arguments passed to Rscript")
+    p_run.add_argument(
+        "script", nargs="?", help="Script path (default: scripts/run_analysis.R)"
+    )
+    p_run.add_argument(
+        "extra", nargs=argparse.REMAINDER, help="Extra arguments passed to Rscript"
+    )
+    p_run.add_argument(
+        "--no-sync",
+        dest="sync",
+        action="store_false",
+        default=True,
+        help="Skip automatic package sync before running",
+    )
     p_run.set_defaults(func=cmd_run)
 
     # rv clean
     p_clean = sub.add_parser("clean", help="Remove generated outputs")
-    p_clean.add_argument("--renv", action="store_true", help="Also clean renv library cache")
+    p_clean.add_argument(
+        "--renv", action="store_true", help="Also clean renv library cache"
+    )
     p_clean.set_defaults(func=cmd_clean)
 
     args = parser.parse_args()

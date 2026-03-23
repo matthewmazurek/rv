@@ -2,10 +2,8 @@ source("R/init.R")
 # Provides: cfg
 # cfg — analysis.yaml defaults merged with CLI overrides (CLI wins)
 
-if (!is.null(cfg$seed)) set.seed(cfg$seed)
-
-# SLURM environment — available when submitted via sbatch
-slurm <- list(
+# SLURM environment — merge into cfg (CLI args > SLURM env > config defaults)
+slurm_env <- list(
   job_id   = Sys.getenv("SLURM_JOB_ID", ""),
   task_id  = Sys.getenv("SLURM_ARRAY_TASK_ID", ""),
   cpus     = as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "1")),
@@ -13,8 +11,15 @@ slurm <- list(
   ntasks   = Sys.getenv("SLURM_NTASKS", "1"),
   nodelist = Sys.getenv("SLURM_NODELIST", "")
 )
+for (k in names(slurm_env)) {
+  if (is.null(cfg[[k]]) && nzchar(as.character(slurm_env[[k]]))) {
+    cfg[[k]] <- slurm_env[[k]]
+  }
+}
 
-workers <- if (identical(cfg$workers, "auto")) slurm$cpus else cfg$workers %||% slurm$cpus
+if (!is.null(cfg$seed)) set.seed(cfg$seed)
+
+workers <- if (identical(cfg$workers, "auto")) cfg$cpus else cfg$workers %||% cfg$cpus
 
 output_path <- cfg$output %||% "results/output.txt"
 
@@ -23,7 +28,7 @@ lines <- c(
   paste("Project:", cfg$project_name %||% "unknown"),
   paste("Working directory:", getwd()),
   paste("Input:", cfg$input %||% "<none>"),
-  paste("SLURM Job:", slurm$job_id %||% "<local>"),
+  paste("SLURM Job:", cfg$job_id %||% "<local>"),
   paste("Workers:", workers)
 )
 

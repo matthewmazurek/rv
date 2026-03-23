@@ -5,4 +5,5 @@ while [[ -L "$SOURCE" ]]; do
   SOURCE="$(readlink "$SOURCE")"
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
-exec python3 "$(cd "$(dirname "$SOURCE")" && pwd)/rv.py" "$@"
+PROJECT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+exec uv run --project "$PROJECT_DIR" python "$PROJECT_DIR/rv.py" "$@"

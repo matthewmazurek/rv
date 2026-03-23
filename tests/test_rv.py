@@ -364,6 +364,9 @@ class TestCmdInit:
             renv=False,
             rproj=False,
             slurm=False,
+            docker=False,
+            apptainer=False,
+            ci=False,
             force=False,
             sync=False,
         )
@@ -381,6 +384,9 @@ class TestCmdInit:
             renv=True,
             rproj=False,
             slurm=False,
+            docker=False,
+            apptainer=False,
+            ci=False,
             force=True,
             sync=False,
         )
@@ -621,3 +627,130 @@ class TestLoadScriptAliases:
         cfg.write_text('renv = true\npackages = ["yaml"]\n')
         monkeypatch.chdir(tmp_path)
         assert rv.load_script_aliases() == {}
+
+
+# ── renv_snapshot error handling ───────────────────────────────────────────
+
+
+class TestRenvSnapshot:
+    def test_skipped_when_renv_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = false\npackages = []\n")
+        (tmp_path / "renv.lock").write_text("{}")
+        assert rv.renv_snapshot() is True
+
+    def test_skipped_when_no_lockfile(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = true\npackages = []\n")
+        assert rv.renv_snapshot() is True
+
+    def test_success_on_first_try(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = true\npackages = []\n")
+        (tmp_path / "renv.lock").write_text("{}")
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 0),
+        )
+        assert rv.renv_snapshot() is True
+
+    def test_recovers_after_install_repair(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = true\npackages = []\n")
+        (tmp_path / "renv.lock").write_text("{}")
+
+        call_count = 0
+
+        def mock_rscript(*args):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(args, 1)
+            return subprocess.CompletedProcess(args, 0)
+
+        monkeypatch.setattr(rv, "rscript", mock_rscript)
+        assert rv.renv_snapshot() is True
+        assert call_count == 3  # snapshot fail, install, snapshot retry
+
+    def test_returns_false_on_unrecoverable_failure(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = true\npackages = []\n")
+        (tmp_path / "renv.lock").write_text("{}")
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 1),
+        )
+        assert rv.renv_snapshot() is False
+
+
+# ── cmd_add error handling ─────────────────────────────────────────────────
+
+
+class TestCmdAddErrorHandling:
+    def test_exits_on_install_failure(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = false\npackages = []\n")
+
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 1),
+        )
+        args = types.SimpleNamespace(packages=["dplyr"], bioc=False)
+        with pytest.raises(SystemExit):
+            rv.cmd_add(args)
+
+    def test_succeeds_when_install_passes(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text("renv = false\npackages = []\n")
+
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 0),
+        )
+        args = types.SimpleNamespace(packages=["dplyr"], bioc=False)
+        rv.cmd_add(args)
+        config = rv.read_rv_config(cfg)
+        assert "dplyr" in config["packages"]
+
+
+# ── cmd_update error handling ──────────────────────────────────────────────
+
+
+class TestCmdUpdateErrorHandling:
+    def test_exits_on_update_failure(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text('renv = false\npackages = ["dplyr"]\n')
+
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 1),
+        )
+        args = types.SimpleNamespace(packages=[])
+        with pytest.raises(SystemExit):
+            rv.cmd_update(args)
+
+    def test_succeeds_when_update_passes(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cfg = tmp_path / "rproject.toml"
+        cfg.write_text('renv = false\npackages = ["dplyr"]\n')
+
+        monkeypatch.setattr(
+            rv,
+            "rscript",
+            lambda *a: subprocess.CompletedProcess(a, 0),
+        )
+        args = types.SimpleNamespace(packages=[])
+        rv.cmd_update(args)
