@@ -132,6 +132,10 @@ def pkgs_to_entries(pkgs: list[Pkg]) -> list[str]:
 # R code generation
 # ---------------------------------------------------------------------------
 
+ENSURE_PAK = 'if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")'
+USE_PPM = 'if (Sys.info()[["sysname"]] == "Linux") pak::repo_add(CRAN = "PPM@latest")'
+PAK_PREAMBLE = f"{ENSURE_PAK}; {USE_PPM}"
+
 
 def build_sync_script(config: dict) -> str:
     """Generate R code to install all packages from rproject.toml."""
@@ -151,9 +155,8 @@ def build_sync_script(config: dict) -> str:
             ]
         )
 
-    lines.append(
-        'if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")'
-    )
+    lines.append(ENSURE_PAK)
+    lines.append(USE_PPM)
 
     pkgs = config.get("packages", [])
     if pkgs:
@@ -414,11 +417,7 @@ def cmd_add(args):
         result = rscript("-e", expr)
     else:
         specs = ", ".join(f'"{pak_spec(n, v)}"' for n, v in added)
-        expr = (
-            'if (!requireNamespace("pak", quietly = TRUE)) '
-            'install.packages("pak"); '
-            f"pak::pkg_install(c({specs}))"
-        )
+        expr = f"{PAK_PREAMBLE}; pak::pkg_install(c({specs}))"
         result = rscript("-e", expr)
 
     if result.returncode != 0:
@@ -517,11 +516,7 @@ def cmd_update(args):
     write_rv_config(config)
 
     specs = ", ".join(f'"{n}"' for n, _ in targets)
-    expr = (
-        'if (!requireNamespace("pak", quietly = TRUE)) '
-        'install.packages("pak"); '
-        f"pak::pkg_install(c({specs}))"
-    )
+    expr = f"{PAK_PREAMBLE}; pak::pkg_install(c({specs}))"
     print(f"Updating {len(targets)} package(s)...")
     result = rscript("-e", expr)
 
