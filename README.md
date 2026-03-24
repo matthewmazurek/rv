@@ -64,7 +64,7 @@ rv add SingleCellExperiment --bioc
 rv rm dplyr
 ```
 
-Packages are managed in `rproject.toml` and installed via [pak](https://pak.r-lib.org/). On Linux (e.g. HPC clusters), `rv` automatically configures [Posit Public Package Manager](https://packagemanager.posit.co/) so packages install as pre-built binaries instead of compiling from source.
+Packages are managed in `rproject.toml` and installed via [pak](https://pak.r-lib.org/). On Linux (e.g. HPC clusters), `rv` automatically configures [Posit Public Package Manager](https://packagemanager.posit.co/) so packages install as pre-built binaries instead of compiling from source — even for version-pinned packages, by resolving the correct historical PPM snapshot for each pin.
 
 ### `rv update`
 

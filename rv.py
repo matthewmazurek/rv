@@ -2,10 +2,14 @@
 """rv — lightweight R project manager."""
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 import tomllib
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 from pathlib import Path
 
 RV_DIR = Path(__file__).resolve().parent
@@ -133,8 +137,66 @@ def pkgs_to_entries(pkgs: list[Pkg]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 ENSURE_PAK = 'if (!requireNamespace("pak", quietly = TRUE)) install.packages("pak")'
-USE_PPM = 'if (Sys.info()[["sysname"]] == "Linux") pak::repo_add(CRAN = "PPM@latest")'
-PAK_PREAMBLE = f"{ENSURE_PAK}; {USE_PPM}"
+
+PPM_API_URL = "https://packagemanager.posit.co/__api__/repos/cran/packages"
+
+
+def ppm_snapshot_date(package: str, version: str) -> str | None:
+    """Query PPM for a snapshot date where the given package version has binaries.
+
+    Returns a YYYY-MM-DD string (day after publication) or None on failure.
+    """
+    try:
+        url = f"{PPM_API_URL}/{package}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return None
+
+    pub = None
+    if data.get("version") == version:
+        pub = data.get("date_publication")
+    else:
+        for entry in data.get("archived") or []:
+            if entry.get("version") == version:
+                pub = entry.get("date_publication")
+                break
+
+    if not pub:
+        return None
+    dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+    return (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def resolve_ppm_repos(pkgs: list[Pkg]) -> str:
+    """Generate R code to configure PPM repos on Linux for fast binary installs.
+
+    Uses PPM@latest for current-version packages and historical PPM snapshots
+    for version-pinned packages, so even old versions get pre-built binaries.
+    Falls back to CRAN source for anything that can't be resolved.
+    """
+    repo_args: dict[str, str] = {"PPM": "PPM@latest"}
+
+    pinned = [(name, ver) for name, ver in pkgs if ver]
+    if pinned:
+        print(f"Resolving PPM snapshots for {len(pinned)} pinned package(s)...")
+        with ThreadPoolExecutor(max_workers=min(len(pinned), 8)) as pool:
+            futures = {
+                pool.submit(ppm_snapshot_date, name, ver): (name, ver)
+                for name, ver in pinned
+            }
+            for future in as_completed(futures):
+                name, ver = futures[future]
+                date = future.result()
+                if date:
+                    repo_args[f"PPM_{date.replace('-', '')}"] = f"PPM@{date}"
+                    print(f"  {name}@{ver} -> {date}")
+                else:
+                    print(f"  {name}@{ver} -> source fallback")
+
+    args_str = ", ".join(f'{k} = "{v}"' for k, v in repo_args.items())
+    return f'if (Sys.info()[["sysname"]] == "Linux") pak::repo_add({args_str})'
 
 
 def build_sync_script(config: dict) -> str:
@@ -156,7 +218,7 @@ def build_sync_script(config: dict) -> str:
         )
 
     lines.append(ENSURE_PAK)
-    lines.append(USE_PPM)
+    lines.append(resolve_ppm_repos(config_to_pkgs(config)))
 
     pkgs = config.get("packages", [])
     if pkgs:
@@ -417,7 +479,8 @@ def cmd_add(args):
         result = rscript("-e", expr)
     else:
         specs = ", ".join(f'"{pak_spec(n, v)}"' for n, v in added)
-        expr = f"{PAK_PREAMBLE}; pak::pkg_install(c({specs}))"
+        ppm_code = resolve_ppm_repos(added)
+        expr = f"{ENSURE_PAK}; {ppm_code}; pak::pkg_install(c({specs}))"
         result = rscript("-e", expr)
 
     if result.returncode != 0:
@@ -516,7 +579,8 @@ def cmd_update(args):
     write_rv_config(config)
 
     specs = ", ".join(f'"{n}"' for n, _ in targets)
-    expr = f"{PAK_PREAMBLE}; pak::pkg_install(c({specs}))"
+    ppm_code = resolve_ppm_repos([])
+    expr = f"{ENSURE_PAK}; {ppm_code}; pak::pkg_install(c({specs}))"
     print(f"Updating {len(targets)} package(s)...")
     result = rscript("-e", expr)
 
